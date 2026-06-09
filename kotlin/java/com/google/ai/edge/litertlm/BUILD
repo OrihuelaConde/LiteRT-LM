@@ -41,7 +41,6 @@ kt_android_library(
         # When link LiteRT dynamically, includes the shared lib.
         "@litert//litert:litert_link_capi_so": [
             "@litert//litert/c:litert_runtime_c_api_shared_lib",
-            "@litert//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator_shared_lib",
         ],
         "//conditions:default": [],
     }),
