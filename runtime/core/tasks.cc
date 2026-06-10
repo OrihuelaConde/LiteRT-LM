@@ -37,8 +37,9 @@
 #include "litert/cc/litert_element_type.h"  // from @litert
 #include "litert/cc/litert_macros.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
-#include "runtime/components/constrained_decoding/constrained_decoder.h"
-#include "runtime/components/constrained_decoding/constraint.h"
+#include "runtime/components/logits_processor/constrained_decoding/constrained_decoder.h"
+#include "runtime/components/logits_processor/constrained_decoding/constraint.h"
+#include "runtime/components/logits_processor/logits_processor_chain.h"
 #include "runtime/components/sampler.h"
 #include "runtime/components/scoring_cpu_util.h"
 #include "runtime/components/stop_token_detector.h"
@@ -121,9 +122,11 @@ class DecodeOneStep {
         sampler_(sampler),
         benchmark_info_(benchmark_info),
         stop_token_detector_(stop_token_detector) {
+    logits_processor_chain_ = std::make_unique<LogitsProcessorChain>();
     if (constraint != nullptr) {
-      constrained_decoder_ = std::make_unique<ConstrainedDecoder>(
-          constraint, num_output_candidates_);
+      logits_processor_chain_->AddProcessor(
+          std::make_unique<ConstrainedDecoder>(constraint,
+                                               num_output_candidates_));
     }
     if (sampler_.has_value()) {  // External sampling setup
       auto scores_tensor = CreateTensorBuffer<float>({num_output_candidates_});
@@ -327,13 +330,12 @@ class DecodeOneStep {
                               decoded_ids->Duplicate());
       ExecutorInputs inputs(ExecutorTextData(std::move(duplicate_decoded_ids)),
                             std::nullopt, std::nullopt);
-      // Update constraint state only with decode ids.
+      // Update the logits processor state only with decode ids.
       // If this is the first step, last_token_ids comes from prefill, therefore
       // should be ignored.
-      if (!is_first_step_ && constrained_decoder_) {
+      if (!is_first_step_ && !logits_processor_chain_->empty()) {
         LITERT_ASSIGN_OR_RETURN(auto last_token_ids, decoded_ids->Duplicate());
-        RETURN_IF_ERROR(
-            constrained_decoder_->UpdateConstraintState(last_token_ids));
+        RETURN_IF_ERROR(logits_processor_chain_->UpdateState(last_token_ids));
       }
       // Decoding section.
       if (benchmark_info_.has_value()) {
@@ -343,10 +345,9 @@ class DecodeOneStep {
       if (benchmark_info_.has_value()) {
         RETURN_IF_ERROR(benchmark_info_->TimeMarkDelta("executor_decode"));
       }
-      // If constrained decoding is enabled, masks the logits based on the
-      // constraint state.
-      if (constrained_decoder_) {
-        RETURN_IF_ERROR(constrained_decoder_->MaskLogits(output_logits));
+      // If the logits processor chain is not empty, process the logits.
+      if (!logits_processor_chain_->empty()) {
+        RETURN_IF_ERROR(logits_processor_chain_->ProcessLogits(output_logits));
       }
 
       // Samping section.
@@ -369,9 +370,9 @@ class DecodeOneStep {
             benchmark_info_->TimeMarkDelta("executor_decode_and_sample"));
       }
       std::vector<std::vector<int>> output_tokens;
-      if (constrained_decoder_) {
+      if (!logits_processor_chain_->empty()) {
         auto decode_params = ExecutorDecodeParams();
-        decode_params.SetConstraintDecoder(constrained_decoder_.get());
+        decode_params.SetLogitsProcessorChain(logits_processor_chain_.get());
         ASSIGN_OR_RETURN(output_tokens, executor_.Decode(decode_params));
       } else {
         ASSIGN_OR_RETURN(output_tokens, executor_.Decode());
@@ -388,7 +389,7 @@ class DecodeOneStep {
   Tokenizer& tokenizer_;
   const int num_output_candidates_;
   std::optional<Sampler*> sampler_;
-  std::unique_ptr<ConstrainedDecoder> constrained_decoder_;
+  std::unique_ptr<LogitsProcessorChain> logits_processor_chain_;
   std::optional<BenchmarkInfo> benchmark_info_;
   StopTokenDetector stop_token_detector_;
 

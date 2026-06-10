@@ -16,6 +16,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -30,8 +31,9 @@
 #include "litert/cc/litert_layout.h"  // from @litert
 #include "litert/cc/litert_ranked_tensor_type.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
-#include "runtime/components/constrained_decoding/constrained_decoder.h"
-#include "runtime/components/constrained_decoding/fake_constraint.h"
+#include "runtime/components/logits_processor/constrained_decoding/constrained_decoder.h"
+#include "runtime/components/logits_processor/constrained_decoding/fake_constraint.h"
+#include "runtime/components/logits_processor/logits_processor_chain.h"
 #include "runtime/util/test_utils.h"  // IWYU pragma: keep
 
 namespace litert::lm {
@@ -783,15 +785,17 @@ TEST(LlmExecutorIoTypesTest, ExecutorPrefillParamsGetSet) {
 
 TEST(LlmExecutorIoTypesTest, ExecutorDecodeParamsGetSet) {
   ExecutorDecodeParams params;
-  EXPECT_FALSE(params.HasConstraintDecoder());
-  EXPECT_EQ(params.GetConstraintDecoder(), nullptr);
+  EXPECT_FALSE(params.HasLogitsProcessorChain());
+  EXPECT_EQ(params.GetLogitsProcessorChain(), nullptr);
 
   auto constraint = FakeConstraint({1, 2, 3}, /*vocabulary_size=*/10);
-  ConstrainedDecoder constraint_decoder =
-      ConstrainedDecoder(&constraint, /*batch_size=*/1);
-  params.SetConstraintDecoder(&constraint_decoder);
-  EXPECT_TRUE(params.HasConstraintDecoder());
-  EXPECT_EQ(params.GetConstraintDecoder(), &constraint_decoder);
+  LogitsProcessorChain chain;
+  chain.AddProcessor(
+      std::make_unique<ConstrainedDecoder>(&constraint, /*batch_size=*/1));
+  params.SetLogitsProcessorChain(&chain);
+  EXPECT_TRUE(params.HasLogitsProcessorChain());
+  EXPECT_EQ(params.GetNumLogitsProcessors(), 1);
+  EXPECT_EQ(params.GetLogitsProcessorChain(), &chain);
 }
 
 TEST(LlmExecutorIoTypesTest, ExecutorVisionDataDuplicate) {

@@ -26,7 +26,8 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/cc/litert_macros.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
-#include "runtime/components/constrained_decoding/constrained_decoder.h"
+#include "runtime/components/logits_processor/constrained_decoding/constrained_decoder.h"
+#include "runtime/components/logits_processor/logits_processor_chain.h"
 #include "runtime/util/logging_tensor_buffer.h"
 
 namespace litert::lm {
@@ -574,9 +575,24 @@ std::ostream& operator<<(std::ostream& os,
 }
 
 // --- ExecutorDecodeParams Implementation ---
-void ExecutorDecodeParams::SetConstraintDecoder(
-    ConstrainedDecoder* constraint) {
-  constraint_decoder_ = constraint;
+void ExecutorDecodeParams::SetLogitsProcessorChain(
+    LogitsProcessorChain* logits_processor_chain) {
+  logits_processor_chain_ = logits_processor_chain;
+  constraint_decoder_ = logits_processor_chain_
+                            ? logits_processor_chain_->GetConstraintDecoder()
+                            : nullptr;
+}
+
+bool ExecutorDecodeParams::HasLogitsProcessorChain() const {
+  return logits_processor_chain_ != nullptr;
+}
+
+LogitsProcessorChain* ExecutorDecodeParams::GetLogitsProcessorChain() const {
+  return logits_processor_chain_;
+}
+
+int ExecutorDecodeParams::GetNumLogitsProcessors() const {
+  return logits_processor_chain_ ? logits_processor_chain_->size() : 0;
 }
 
 bool ExecutorDecodeParams::HasConstraintDecoder() const {
@@ -589,9 +605,9 @@ ConstrainedDecoder* ExecutorDecodeParams::GetConstraintDecoder() const {
 
 std::ostream& operator<<(std::ostream& os, const ExecutorDecodeParams& params) {
   os << "ExecutorDecodeParams: {\n";
-  os << kFieldIndent << "ConstraintDecoder: ";
-  if (params.HasConstraintDecoder()) {
-    os << params.GetConstraintDecoder();
+  os << kFieldIndent << "LogitProcessorChain: ";
+  if (params.HasLogitsProcessorChain()) {
+    os << params.GetNumLogitsProcessors() << " processors";
   } else {
     os << "not set";
   }

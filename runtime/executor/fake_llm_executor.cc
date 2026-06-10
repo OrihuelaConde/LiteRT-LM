@@ -29,6 +29,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/litert_macros.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
+#include "runtime/components/logits_processor/logits_processor_chain.h"
 #include "runtime/executor/executor_settings_base.h"
 #include "runtime/executor/llm_executor_io_types.h"
 #include "runtime/executor/llm_executor_settings.h"
@@ -189,10 +190,12 @@ absl::StatusOr<std::vector<std::vector<int>>> FakeLlmExecutor::Decode(
         decode_times_));
   }
   std::vector<std::vector<int>> output_tokens;
-  if (decode_params.HasConstraintDecoder()) {
-    // If constraint decoder is set, we will decode logits and apply the mask
-    // from the constraint decoder to generate the final output tokens.
-    auto constraint_decoder = decode_params.GetConstraintDecoder();
+  if (decode_params.HasLogitsProcessorChain()) {
+    // If the logits processor chain is not empty, we will decode logits and
+    // apply changes from the logits processors to generate the final output
+    // tokens.
+    LogitsProcessorChain* logits_processor_chain =
+        decode_params.GetLogitsProcessorChain();
     // Get the last token ids from the last prefill or decode call.
     LITERT_ASSIGN_OR_RETURN(auto last_token_ids,
                             CreateTensorBuffer<int>({batch_size_, 1}));
@@ -206,9 +209,8 @@ absl::StatusOr<std::vector<std::vector<int>>> FakeLlmExecutor::Decode(
       for (int i = 0; i < batch_size_; ++i) {
         (*last_token_ids_span)[i] = last_decode_tokens[i];
       }
-      // Update the constraint state with the last token ids.
-      RETURN_IF_ERROR(
-          constraint_decoder->UpdateConstraintState(last_token_ids));
+      // Update the state of the logits processors with the last token ids.
+      RETURN_IF_ERROR(logits_processor_chain->UpdateState(last_token_ids));
     }
 
     LITERT_ASSIGN_OR_RETURN(
@@ -216,8 +218,8 @@ absl::StatusOr<std::vector<std::vector<int>>> FakeLlmExecutor::Decode(
         CreateTensorBuffer<float>({batch_size_, 1, vocab_size_}));
     DecodeIdsToLogits(decode_tokens_set_[decode_times_], vocab_size_,
                       output_logits);
-    // Apply the mask from the constraint decoder to the logits.
-    RETURN_IF_ERROR(constraint_decoder->MaskLogits(output_logits));
+    // Apply changes from the logit processors to the logits.
+    RETURN_IF_ERROR(logits_processor_chain->ProcessLogits(output_logits));
     output_tokens = DecodeLogitsToIds(batch_size_, vocab_size_, output_logits,
                                       decode_tokens_set_);
   } else {

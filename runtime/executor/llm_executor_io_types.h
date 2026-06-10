@@ -26,7 +26,8 @@
 #include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
-#include "runtime/components/constrained_decoding/constrained_decoder.h"
+#include "runtime/components/logits_processor/constrained_decoding/constrained_decoder.h"
+#include "runtime/components/logits_processor/logits_processor_chain.h"
 #include "runtime/executor/llm_executor_processed_tokens.h"
 #include "runtime/executor/llm_executor_settings.h"
 
@@ -427,9 +428,19 @@ class ExecutorDecodeParams {
  public:
   ExecutorDecodeParams() = default;
 
-  // Sets the constraint decoder. The caller retains ownership of the constraint
-  // decoder and must ensure it outlives the ExecutorDecodeParams.
-  void SetConstraintDecoder(ConstrainedDecoder* constraint);
+  // Sets the logits processor chain. The caller retains ownership of the chain
+  // and must ensure it outlives the ExecutorDecodeParams.
+  void SetLogitsProcessorChain(LogitsProcessorChain* logits_processor_chain);
+
+  // Returns true if the logit processor chain is set.
+  bool HasLogitsProcessorChain() const;
+
+  // Returns the logits processor chain if it exists. Otherwise, returns
+  // nullptr.
+  LogitsProcessorChain* GetLogitsProcessorChain() const;
+
+  // Returns the number of logit processors in the chain.
+  int GetNumLogitsProcessors() const;
 
   // Returns true if the constraint decoder is set.
   bool HasConstraintDecoder() const;
@@ -438,6 +449,7 @@ class ExecutorDecodeParams {
   ConstrainedDecoder* GetConstraintDecoder() const;
 
  private:
+  LogitsProcessorChain* absl_nullable logits_processor_chain_ = nullptr;
   ConstrainedDecoder* absl_nullable constraint_decoder_ = nullptr;
 };
 std::ostream& operator<<(std::ostream& os, const ExecutorDecodeParams& params);

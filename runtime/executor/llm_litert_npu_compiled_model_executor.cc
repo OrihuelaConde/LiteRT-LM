@@ -1542,16 +1542,15 @@ LlmLiteRtNpuCompiledModelExecutor::DecodeLogits(
                                    per_tensor_logits_scale_,
                                    per_tensor_logits_zero_point_, false));
 
-  if (decode_params.HasConstraintDecoder()) {
+  if (decode_params.HasLogitsProcessorChain()) {
     std::vector<int> current_token_ids = {token->id()};
     if (last_run_is_decode) {
-      RETURN_IF_ERROR(
-          decode_params.GetConstraintDecoder()->UpdateConstraintState(
-              absl::MakeSpan(current_token_ids)));
+      RETURN_IF_ERROR(decode_params.GetLogitsProcessorChain()->UpdateState(
+          absl::MakeSpan(current_token_ids)));
     }
 
     RETURN_IF_ERROR(
-        decode_params.GetConstraintDecoder()->MaskLogits(output_logits));
+        decode_params.GetLogitsProcessorChain()->ProcessLogits(output_logits));
   }
 
   current_step_++;
@@ -1568,7 +1567,7 @@ LlmLiteRtNpuCompiledModelExecutor::Decode() {
 absl::StatusOr<std::vector<std::vector<int>>>
 LlmLiteRtNpuCompiledModelExecutor::Decode(
     const ExecutorDecodeParams& decode_params) {
-  if (decode_params.HasConstraintDecoder()) {
+  if (decode_params.HasLogitsProcessorChain()) {
     auto start = absl::Now();
 
     LITERT_ASSIGN_OR_RETURN(auto masked_logits,
@@ -3264,7 +3263,7 @@ LlmLiteRtNpuCompiledModelExecutor::CreateForModelWithoutPerLayerEmbedding(
   // fail). Luckily these buffers are not used, so we can simply create new
   // ones to satisfy the compiled model run API.  We can remove this
   // workaround once we have a model that removes these buffers.
-  if (llm_inference_context.prefill_input_buffers.contains(cache_k31)){
+  if (llm_inference_context.prefill_input_buffers.contains(cache_k31)) {
     // For models with 32 layers. Do nothing.
   } else if (llm_inference_context.prefill_input_buffers.contains(cache_k25)) {
     LITERT_ASSIGN_OR_RETURN(auto buffer_k, llm_compiled_model.CreateInputBuffer(
