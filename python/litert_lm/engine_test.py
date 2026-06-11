@@ -635,5 +635,57 @@ class FunctionCallingTest(LiteRtLmTestBase):
       self.assertNotEmpty(text_pieces)
 
 
+
+class LoraTest(LiteRtLmTestBase):
+
+  def setUp(self):
+    super().setUp()
+    self.lora_model_path = str(
+        pathlib.Path(FLAGS.test_srcdir)
+        / "litert_lm/runtime/testdata/test_lm_lora.litertlm"
+    )
+    self.lora_path = str(
+        pathlib.Path(FLAGS.test_srcdir)
+        / "litert_lm/runtime/testdata/test_lora_rank32_f16_all_ones.tflite"
+    )
+
+  def test_engine_init_with_lora_rank(self):
+    engine = litert_lm.Engine(
+        self.lora_model_path,
+        litert_lm.Backend.CPU(),
+        max_num_tokens=16,
+        lora_rank=32,
+        cache_dir=":nocache",
+    )
+    self.assertEqual(engine.lora_rank, 32)
+    self.assertIsNone(engine.audio_lora_rank)
+
+    conversation = engine.create_conversation(
+        lora_path=self.lora_path,
+    )
+    self.assertEqual(conversation.lora_path, self.lora_path)
+    self.assertIsNone(conversation.audio_lora_path)
+
+    message = conversation.send_message("hello")
+    self.assertIsNotNone(message)
+    content_list = message.get("content", [])
+    self.assertNotEmpty(content_list)
+
+  def test_session_init_with_lora(self):
+    engine = litert_lm.Engine(
+        self.lora_model_path,
+        litert_lm.Backend.CPU(),
+        max_num_tokens=16,
+        lora_rank=32,
+        cache_dir=":nocache",
+    )
+    session = engine.create_session(
+        lora_path=self.lora_path,
+    )
+    session.run_prefill(["hello"])
+    responses = session.run_decode()
+    self.assertIsNotNone(responses.texts)
+
+
 if __name__ == "__main__":
   absltest.main()

@@ -62,6 +62,8 @@ class Engine(interfaces.AbstractEngine):
       audio_backend: (
           interfaces.Backend | type[interfaces.Backend] | None
       ) = None,
+      lora_rank: int | None = None,
+      audio_lora_rank: int | None = None,
       **kwargs,
   ):
     backend = _normalize_backend(backend)
@@ -75,6 +77,8 @@ class Engine(interfaces.AbstractEngine):
         cache_dir=cache_dir,
         vision_backend=vision_backend,
         audio_backend=audio_backend,
+        lora_rank=lora_rank,
+        audio_lora_rank=audio_lora_rank,
         **kwargs,
     )
 
@@ -130,6 +134,31 @@ class Engine(interfaces.AbstractEngine):
       self._lib.litert_lm_engine_settings_set_enable_speculative_decoding(
           settings, self.enable_speculative_decoding
       )
+    if self.lora_rank is not None:
+      self._lib.litert_lm_engine_settings_set_lora_rank(
+          settings, self.lora_rank
+      )
+      if self.lora_rank > 0:
+        c_ranks = (ctypes.c_int * 1)(self.lora_rank)
+        status = self._lib.litert_lm_engine_settings_set_supported_lora_ranks(
+            settings, c_ranks, 1
+        )
+        if status != 0:
+          raise RuntimeError("Failed to set supported LoRA ranks.")
+
+    if self.audio_lora_rank is not None:
+      self._lib.litert_lm_engine_settings_set_audio_lora_rank(
+          settings, self.audio_lora_rank
+      )
+      if self.audio_lora_rank > 0:
+        c_ranks = (ctypes.c_int * 1)(self.audio_lora_rank)
+        status = (
+            self._lib.litert_lm_engine_settings_set_supported_audio_lora_ranks(
+                settings, c_ranks, 1
+            )
+        )
+        if status != 0:
+          raise RuntimeError("Failed to set supported audio LoRA ranks.")
 
     self._engine_ptr = self._lib.litert_lm_engine_create(settings)
     self._lib.litert_lm_engine_settings_delete(settings)
@@ -173,6 +202,8 @@ class Engine(interfaces.AbstractEngine):
       sampler_config: interfaces.SamplerConfig | None = None,
       system_message: str | None = None,
       enable_constrained_decoding: bool = False,
+      lora_path: str | None = None,
+      audio_lora_path: str | None = None,
   ) -> Conversation:
     session_config = self._lib.litert_lm_session_config_create()
     if sampler_config:
@@ -180,6 +211,20 @@ class Engine(interfaces.AbstractEngine):
       self._lib.litert_lm_session_config_set_sampler_params(
           session_config, ctypes.byref(params)
       )
+
+    if lora_path:
+      status = self._lib.litert_lm_session_config_set_lora_path(
+          session_config, lora_path
+      )
+      if status != 0:
+        raise RuntimeError(f"Failed to set LoRA path: {lora_path}")
+
+    if audio_lora_path:
+      status = self._lib.litert_lm_session_config_set_audio_lora_path(
+          session_config, audio_lora_path
+      )
+      if status != 0:
+        raise RuntimeError(f"Failed to set audio LoRA path: {audio_lora_path}")
 
     conv_config = self._lib.litert_lm_conversation_config_create()
     if not conv_config:
@@ -255,6 +300,8 @@ class Engine(interfaces.AbstractEngine):
         automatic_tool_calling=automatic_tool_calling,
         extra_context=extra_context or {},
         sampler_config=sampler_config,
+        lora_path=lora_path,
+        audio_lora_path=audio_lora_path,
     )
 
   def create_session(
@@ -263,6 +310,8 @@ class Engine(interfaces.AbstractEngine):
       apply_prompt_template: bool = True,
       sampler_config: interfaces.SamplerConfig | None = None,
       max_output_tokens: int | None = None,
+      lora_path: str | None = None,
+      audio_lora_path: str | None = None,
   ) -> Session:
     session_config = self._lib.litert_lm_session_config_create()
     if not session_config:
@@ -282,6 +331,20 @@ class Engine(interfaces.AbstractEngine):
       self._lib.litert_lm_session_config_set_max_output_tokens(
           session_config, int(max_output_tokens)
       )
+
+    if lora_path:
+      status = self._lib.litert_lm_session_config_set_lora_path(
+          session_config, lora_path
+      )
+      if status != 0:
+        raise RuntimeError(f"Failed to set LoRA path: {lora_path}")
+
+    if audio_lora_path:
+      status = self._lib.litert_lm_session_config_set_audio_lora_path(
+          session_config, audio_lora_path
+      )
+      if status != 0:
+        raise RuntimeError(f"Failed to set audio LoRA path: {audio_lora_path}")
 
     sess_ptr = self._lib.litert_lm_engine_create_session(
         self._engine_ptr, session_config
